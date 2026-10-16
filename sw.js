@@ -1,7 +1,7 @@
 /* Leolukaonly service worker
    - 페이지(HTML)는 인터넷 먼저 → 새 버전이 바로 반영되고, 오프라인이면 저장본을 보여줌
    - 아이콘·manifest는 저장본 먼저 */
-const CACHE = 'leolukaonly-v2';
+const CACHE = 'leolukaonly-v3';
 const FILES = [
   './',
   './index.html',
