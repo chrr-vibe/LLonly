@@ -62,6 +62,17 @@
   .pill-btn:hover{background:var(--accent);color:#000;}
   .pill-btn.solid{background:var(--accent);color:#000;}
   .pill-btn.solid:hover{background:var(--accent-deep);border-color:var(--accent-deep);}
+  .theme-btn.plain{padding:10px 20px;}
+
+  /* ───── Backup modal ───── */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:16px;z-index:50;}
+  .overlay.open{display:flex;}
+  .modal{width:min(440px,100%);background:var(--bg);color:var(--ink);border:2px solid var(--accent);border-radius:32px;padding:26px 22px 22px;text-align:center;}
+  .modal h2{margin:0 0 8px;font-family:'TitleSerif','Liberation Serif','Times New Roman',Times,serif;font-size:24px;font-weight:700;}
+  .hint{margin:0 auto;max-width:30em;font-size:14px;line-height:1.6;color:var(--muted);}
+  .b-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:16px;}
+  .b-note{min-height:1.6em;margin-top:10px;}
+  .b-close{margin-top:10px;}
   .pill-btn:focus-visible,.theme-btn:focus-visible{box-shadow:0 0 0 3px var(--glow);outline:none;}
 
   /* ───── Booth map ───── */
@@ -174,6 +185,7 @@
     <div class="themes">
       <button class="theme-btn" data-t="lukas"><i style="background:#FF6B9A"></i>Lukas</button>
       <button class="theme-btn" data-t="leonard"><i style="background:#ABD3DB"></i>Leonard</button>
+      <button class="theme-btn plain" id="backupOpen" aria-haspopup="dialog">Backup</button>
     </div>
   </div>
 
@@ -187,6 +199,21 @@
         <section class="panel" id="panel" aria-live="polite"></section>
 
   </main>
+</div>
+
+<!-- Backup modal -->
+<div class="overlay" id="backupOverlay">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="bTitle">
+    <h2 id="bTitle">Backup</h2>
+    <p class="hint">Save your booth lists and theme to a file, or bring them back from one.</p>
+    <div class="b-actions">
+      <button class="pill-btn" id="exportBtn">Save backup file</button>
+      <button class="pill-btn" id="importBtn">Restore from file</button>
+    </div>
+    <p class="hint b-note" id="backupNote" role="status"></p>
+    <input type="file" id="importFile" accept="application/json,.json" hidden>
+    <div class="b-close"><button class="pill-btn solid" id="backupClose">Close</button></div>
+  </div>
 </div>
 
 <script>
@@ -223,10 +250,10 @@ function twoStep(btn, armedLabel, fn){
 /* ───── Themes ───── */
 function setTheme(name, save=true){
   document.documentElement.dataset.theme = name;
-  document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('on', b.dataset.t===name));
+  document.querySelectorAll('.theme-btn[data-t]').forEach(b=>b.classList.toggle('on', b.dataset.t===name));
   if(save) store.set('theme',name);
 }
-document.querySelectorAll('.theme-btn').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.t)));
+document.querySelectorAll('.theme-btn[data-t]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.t)));
 
 /* ───── Layout (matches the printed map) ─────
    grid columns: 렝 1 · 루 3 · ♥ 4 · 영 6 · 화 7 · 제 9
@@ -365,6 +392,47 @@ $('panel').addEventListener('click', e=>{
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){
   window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
+
+/* ───── Backup ───── */
+const overlay = $('backupOverlay');
+function openBackup(){ $('backupNote').textContent=''; overlay.classList.add('open'); $('exportBtn').focus(); }
+function closeBackup(){ overlay.classList.remove('open'); $('backupOpen').focus(); }
+$('backupOpen').onclick = openBackup;
+$('backupClose').onclick = closeBackup;
+overlay.addEventListener('click', e=>{ if(e.target===overlay) closeBackup(); });
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && overlay.classList.contains('open')) closeBackup(); });
+
+$('exportBtn').onclick = ()=>{
+  const d = new Date(), p2 = n=>String(n).padStart(2,'0');
+  const payload = {app:'leolukaonly', version:1, savedAt:d.toISOString(), theme:document.documentElement.dataset.theme, booths:data};
+  const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `leolukaonly-backup-${d.getFullYear()}-${p2(d.getMonth()+1)}-${p2(d.getDate())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  $('backupNote').textContent = 'Backup file saved. Check your downloads.';
+};
+$('importBtn').onclick = ()=> $('importFile').click();
+$('importFile').addEventListener('change', e=>{
+  const f = e.target.files && e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const fr = new FileReader();
+  fr.onload = async ()=>{
+    try{
+      const j = JSON.parse(fr.result);
+      if(j.app!=='leolukaonly' || typeof j.booths!=='object' || !j.booths) throw new Error();
+      data = j.booths; await save();
+      sel = null;
+      if(j.theme==='lukas' || j.theme==='leonard') setTheme(j.theme);
+      paintBooths(); renderPanel();
+      $('backupNote').textContent = 'Restored from the backup file.';
+    }catch(err){
+      $('backupNote').textContent = 'This file isn’t a backup from this app. Pick a leolukaonly-backup .json file.';
+    }
+  };
+  fr.readAsText(f);
+});
 
 /* ───── Init ───── */
 (async ()=>{
